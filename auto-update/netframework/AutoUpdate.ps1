@@ -39,10 +39,10 @@ or no agent is installed, then the authentication settings below must be passed 
 Url for Contrast UI (api.url).  Defaults to https://app.contrastsecurity.com if not provided
 .PARAMETER ApiKey
 Api Key for Contrast UI (api.api_key)
+.PARAMETER ServiceKey
+Service Key for Contrast UI (api.service_key)
 .PARAMETER ApiUserName
 Username of Contrast UI (api.user_name)
-.PARAMETER ApiKey
-Service Key for Contrast UI (api.service_key)
 #>
 
 Param(
@@ -70,7 +70,7 @@ function GetXmlConfigSetting($xmlDoc, $configKey)
 
 $authSettingsProvided = ($ApiKey -and $ApiUserName -and $ServiceKey)
 # Get install folder
-$contrastReg = Get-ItemProperty "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Contrast Security, Inc.\Contrast.NET\"
+$contrastReg = Get-ItemProperty "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Contrast Security, Inc.\Contrast.NET\" -ErrorAction SilentlyContinue -ErrorVariable ProcessError
 if(($null -eq $contrastReg) -and (!$authSettingsProvided)) {
     Write-Host -ForegroundColor Yellow "Contrast.NET is not installed.  Please pass in the ApiKey, ApiUserName and ServiceKey parameters"
     exit
@@ -132,6 +132,8 @@ Write-Host "Creating temporary directory for agent download: $DestinationPath"
 $enc = [system.Text.Encoding]::ASCII
 $authToken = [System.Convert]::ToBase64String($enc.GetBytes($ApiUserName + ":" + $ServiceKey))
 $wc = New-Object System.Net.WebClient
+# Required for use with web SSL sites
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $wc.Headers.Add("Authorization", $authToken)
 $wc.Headers.Add("API-Key", $ApiKey)
 $wc.Headers.Add("Accept", "application/json")
@@ -147,17 +149,17 @@ Write-Host "Extracting agent from downloaded zip"
 [System.IO.Compression.ZipFile]::ExtractToDirectory($agentFile, $DestinationPath)
 
 #3. Install the agent
-Write-Host "Installing Contrast.NET Agent: $AgentPath -s -norestart StartTray=0" 
+Write-Host "Installing Contrast.NET Agent: $AgentPath -s -norestart PathToYaml=$DestinationPath\contrast_security.yaml SUPPRESS_RESTARTING_IIS=0 INSTALL_AGENT_EXPLORER=1 INSTALL_UPGRADE_SERVICE=1 StartTray=0" 
 # This is a silent install so no GUI will be shown
 # To avoid UAC prompts, make sure this script is run in an administrative console
-Start-Process -FilePath $AgentPath -ArgumentList "-s -norestart StartTray=0" -Wait
+Start-Process -FilePath $AgentPath -ArgumentList "-s -norestart PathToYaml=$DestinationPath\contrast_security.yaml SUPPRESS_RESTARTING_IIS=0 INSTALL_AGENT_EXPLORER=1 INSTALL_UPGRADE_SERVICE=1 StartTray=0" -Wait
 
 #Cleanup the temporary directory
 Write-Host "Clearing temporary directory $DestinationPath"
 Remove-Item $DestinationPath -Recurse
 
 # Display install status
-$contrastReg = Get-ItemProperty "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Contrast Security, Inc.\Contrast.NET\"
+$contrastReg = Get-ItemProperty "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Contrast Security, Inc.\Contrast.NET\" -ErrorAction SilentlyContinue -ErrorVariable ProcessError
 if($contrastReg) {
     $version = $contrastReg.Version
     Write-Host "Contrast.NET $version has been installed."
